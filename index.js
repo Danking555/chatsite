@@ -1,26 +1,28 @@
 /**
- * Simple HTTP Request Logger with SQLite Persistence and Enhanced Fingerprinting
+ * Simple HTTP Request Logger with SQLite Persistence and WebSocket-based Fingerprinting
  *
  * A minimal Express.js app that logs every incoming HTTP request to an SQLite database
- * stored in the OS temp directory and exposes the logs as JSON at '/logs'
- * and as an HTML page with embedded detailed fingerprinting at '/'.
- * It also provides a '/fingerprint' endpoint to receive client fingerprint data.
- * Works on Fly.dev, Render.com, or any environment with a writable OS temp directory.
+ * stored in the OS temp directory. It exposes logs as JSON at '/logs' and serves an
+ * HTML page with embedded detailed fingerprinting via WebSocket at '/'.
  *
  * Setup:
  *   1. npm init -y
- *   2. npm install express sqlite3
+ *   2. npm install express sqlite3 ws
  *   3. node index.js
  */
 
 const express = require('express');
+const http = require('http');
 const path = require('path');
 const os = require('os');
 const sqlite3 = require('sqlite3').verbose();
+const WebSocket = require('ws');
+
 const app = express();
+const server = http.createServer(app);
 const port = process.env.PORT || 3000;
 
-// Parse JSON bodies for fingerprint POSTs
+// Parse JSON bodies (for potential future POSTs)
 app.use(express.json());
 
 // Setup SQLite DB in OS temp directory
@@ -43,7 +45,7 @@ db.serialize(() => {
   `, err => { if (err) console.error('Failed to create table:', err.message); });
 });
 
-// Logger middleware: insert each request into SQLite
+// Logger middleware: insert each HTTP request into SQLite
 app.use((req, res, next) => {
   const { method, originalUrl: url, headers, body } = req;
   const timestamp = new Date().toISOString();
@@ -79,7 +81,7 @@ app.get('/logs', (req, res) => {
   });
 });
 
-// HTML view at '/' with detailed fingerprinting script
+// HTML view at '/' with WebSocket fingerprinting
 app.get('/', (req, res) => {
   db.all(`SELECT method, url, headers, body, timestamp FROM logs ORDER BY id`, [], (err, rows) => {
     if (err) return res.status(500).send('Error reading logs');
@@ -118,27 +120,38 @@ app.get('/', (req, res) => {
     headlessUA: /HeadlessChrome/.test(navigator.userAgent),
     canvas: getCanvasFingerprint()
   };
-  fetch('/fingerprint', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(fingerprint)
-  });
+  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+  ws.onopen = () => ws.send(JSON.stringify({ type: 'fingerprint', data: fingerprint }));
 })();
 </script>
     `;
 
     res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Request Logs</title></head><body>
-<h1>Request Logs (HTML + Detailed Fingerprint)</h1>
+<h1>Request Logs (HTML + WebSocket Fingerprint)</h1>
 ${entriesHtml}
 ${script}
 </body></html>`);
   });
 });
 
-// Receive fingerprint data
-app.post('/fingerprint', (req, res) => {
-  console.log('Fingerprint data:', req.body);
-  res.sendStatus(200);
+// WebSocket server for fingerprint messages
+const wss = new WebSocket.Server({ server });
+wss.on('connection', ws => {
+  ws.on('message', message => {
+    try {
+      const msg = JSON.parse(message);
+      if (msg.type === 'fingerprint') {
+        const timestamp = new Date().toISOString();
+        db.run(
+          `INSERT INTO logs(method, url, headers, body, timestamp) VALUES (?, ?, ?, ?, ?)`,
+          ['WS', '/fingerprint', '{}', JSON.stringify(msg.data), timestamp]
+        );
+      }
+    } catch (e) {
+      console.error('WS parse error:', e);
+    }
+  });
 });
 
-app.listen(port, () => console.log(`Server running on http://localhost:${port}`));
+// Start HTTP+WS server
+server.listen(port, () => console.log(`Server running on http://localhost:${port}`));
