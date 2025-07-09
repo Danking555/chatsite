@@ -1,63 +1,113 @@
 /**
- * Simple HTTP Request Logger
+ * Simple HTTP Request Logger with SQLite Persistence
  *
- * A minimal Express.js app that logs every incoming HTTP request and exposes
- * the logs both as an HTML page and as JSON. It also serves a custom robots.txt.
+ * A minimal Express.js app that logs every incoming HTTP request to both an in-memory
+ * SQLite database stored in the OS temp directory and exposes the logs as HTML and JSON.
+ * Works on Fly.dev, Render.com, or any environment with a writable OS temp directory.
  *
  * Setup:
  *   1. npm init -y
- *   2. npm install express
+ *   2. npm install express sqlite3
  *   3. node index.js
  */
 
 const express = require('express');
 const path = require('path');
+const os = require('os');
+const sqlite3 = require('sqlite3').verbose();
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Middleware to parse JSON and URL-encoded bodies
+// Parse JSON and URL-encoded bodies
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// In-memory store for logs
-const logs = [];
+// Setup SQLite DB in OS temp directory
+const dbPath = path.join(os.tmpdir(), 'logs.db');
+const db = new sqlite3.Database(dbPath, (err) => {
+  if (err) console.error('Failed to connect to DB:', err.message);
+  else console.log(`Connected to SQLite DB at ${dbPath}`);
+});
 
-// Logger middleware
+db.serialize(() => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      method TEXT,
+      url TEXT,
+      headers TEXT,
+      body TEXT,
+      timestamp TEXT
+    )
+  `, (err) => {
+    if (err) console.error('Failed to create table:', err.message);
+  });
+});
+
+// Logger middleware: insert each request into SQLite
 app.use((req, res, next) => {
   const { method, originalUrl: url, headers, body } = req;
   const timestamp = new Date().toISOString();
-  const entry = { method, url, headers, body, timestamp };
-  logs.push(entry);
-  console.log(`Logged: ${method} ${url} at ${timestamp}`);
+  const headersStr = JSON.stringify(headers);
+  const bodyStr = (body && Object.keys(body).length) ? JSON.stringify(body) : '';
+
+  db.run(
+    `INSERT INTO logs(method, url, headers, body, timestamp) VALUES (?, ?, ?, ?, ?)`,
+    [method, url, headersStr, bodyStr, timestamp],
+    (err) => {
+      if (err) console.error('DB insert error:', err.message);
+      else console.log(`Logged to DB: ${method} ${url} at ${timestamp}`);
+    }
+  );
+
   next();
 });
 
 // Serve robots.txt
 app.get('/robots.txt', (req, res) => {
   res.type('text/plain');
-  // Example: disallow /logs from crawlers
   res.send(
     `User-agent: *
 Disallow: /logs`
   );
 });
 
-// Serve logs as HTML with full headers view
+// Serve logs as HTML
 app.get('/', (req, res) => {
-  let html = '<h1>HTTP Request Logs</h1>';
-  for (const log of logs) {
-    html += `<div style="margin-bottom: 1em; padding: .5em; border: 1px solid #ccc;">`;
-    html += `<h2>[${log.timestamp}] ${log.method} ${log.url}</h2>`;
-    html += `<h3>Headers:</h3>`;
-    html += `<pre>${JSON.stringify(log.headers, null, 2)}</pre>`;
-    html += `</div>`;
-  }
-  res.send(html);
+  db.all(`SELECT * FROM logs ORDER BY id`, [], (err, rows) => {
+    if (err) {
+      return res.status(500).json({ error: err.message });
+    }
+
+    const parsed = rows.map(r => ({
+      method: r.method,
+      url: r.url,
+      headers: JSON.parse(r.headers || '{}'),
+      body: r.body ? JSON.parse(r.body) : {},
+      timestamp: r.timestamp
+    }));
+
+    res.json(parsed);
+  });
 });
 
 // Expose logs as JSON
 app.get('/logs', (req, res) => {
-  res.json(logs);
+  db.all(`SELECT * FROM logs ORDER BY id`, [], (err, rows) => {
+    if (err) {
+      return res.status(500).json({ error: err.message });
+    }
+
+    const parsed = rows.map(r => ({
+      method: r.method,
+      url: r.url,
+      headers: JSON.parse(r.headers || '{}'),
+      body: r.body ? JSON.parse(r.body) : {},
+      timestamp: r.timestamp
+    }));
+
+    res.json(parsed);
+  });
 });
 
 app.listen(port, () => {
