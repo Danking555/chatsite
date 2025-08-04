@@ -105,6 +105,19 @@ app.get('/logs', (req, res) => {
     ctx.fillStyle='rgba(102,204,0,0.7)';ctx.fillText('FPJS',4,17);
     return canvas.toDataURL();
   }
+  
+  function parseCookies(cookieString) {
+    if (!cookieString) return {};
+    const cookies = {};
+    cookieString.split(';').forEach(cookie => {
+      const [name, value] = cookie.trim().split('=');
+      if (name && value) {
+        cookies[name] = decodeURIComponent(value);
+      }
+    });
+    return cookies;
+  }
+  
   const fp = {
     origin: location.pathname,
     userAgent: navigator.userAgent,
@@ -116,7 +129,9 @@ app.get('/logs', (req, res) => {
     hasLanguages: Array.isArray(navigator.languages),
     pluginsCount: navigator.plugins.length,
     headlessUA: /HeadlessChrome/.test(navigator.userAgent),
-    canvas: getCanvasFingerprint()
+    canvas: getCanvasFingerprint(),
+    cookies: parseCookies(document.cookie),
+    rawCookies: document.cookie
   };
   const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
   ws.onopen=()=>ws.send(JSON.stringify({type:'fingerprint',data:fp}));
@@ -158,6 +173,19 @@ app.get('/', (req, res) => {
     ctx.fillStyle='rgba(102,204,0,0.7)';ctx.fillText('FPJS',4,17);
     return canvas.toDataURL();
   }
+  
+  function parseCookies(cookieString) {
+    if (!cookieString) return {};
+    const cookies = {};
+    cookieString.split(';').forEach(cookie => {
+      const [name, value] = cookie.trim().split('=');
+      if (name && value) {
+        cookies[name] = decodeURIComponent(value);
+      }
+    });
+    return cookies;
+  }
+  
   const fp = {
     origin: location.pathname,
     userAgent: navigator.userAgent,
@@ -169,7 +197,9 @@ app.get('/', (req, res) => {
     hasLanguages: Array.isArray(navigator.languages),
     pluginsCount: navigator.plugins.length,
     headlessUA: /HeadlessChrome/.test(navigator.userAgent),
-    canvas: getCanvasFingerprint()
+    canvas: getCanvasFingerprint(),
+    cookies: parseCookies(document.cookie),
+    rawCookies: document.cookie
   };
   const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
   ws.onopen=()=>ws.send(JSON.stringify({type:'fingerprint',data:fp}));
