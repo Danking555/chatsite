@@ -1058,6 +1058,9 @@ app.get('/objects', (req, res) => {
   
   <!-- Toggle Button for Side Panel -->
   <button id="togglePanel" style="position: fixed; top: 20px; right: 20px; background-color: #007bff; color: white; border: none; border-radius: 50%; width: 50px; height: 50px; cursor: pointer; z-index: 1001; font-size: 18px;">📊</button>
+  
+  <!-- Save Session Button -->
+  <button id="saveSession" style="position: fixed; top: 80px; right: 20px; background-color: #28a745; color: white; border: none; border-radius: 50%; width: 50px; height: 50px; cursor: pointer; z-index: 1001; font-size: 18px;" title="Save Current Session">💾</button>
 
   <script>
   // Function to get all properties of an object (global scope)
@@ -1089,9 +1092,11 @@ app.get('/objects', (req, res) => {
     return Array.from(properties).sort();
   }
   
-  // Browser Objects Properties Display
+  // Browser Objects Properties Display with Dynamic Observation
   (function() {
     const browserObjectsContainer = document.getElementById('browserObjects');
+    let observedObjects = new Map();
+    let propertyChangeCallbacks = new Map();
     
     // Define browser objects and their descriptions
     const browserObjects = {
@@ -1120,6 +1125,122 @@ app.get('/objects', (req, res) => {
         object: screen
       }
     };
+    
+    // Create a proxy to observe property changes
+    function createObservingProxy(originalObj, objectName) {
+      const knownProperties = new Set(getAllProperties(originalObj));
+      
+      return new Proxy(originalObj, {
+        set(target, property, value) {
+          const isNewProperty = !knownProperties.has(property);
+          const result = Reflect.set(target, property, value);
+          
+          if (isNewProperty) {
+            knownProperties.add(property);
+            console.log('New property detected on ' + objectName + ': ' + String(property));
+            
+            // Notify all callbacks about the new property
+            const callbacks = propertyChangeCallbacks.get(objectName);
+            if (callbacks) {
+              callbacks.forEach(callback => callback(property, value, 'added'));
+            }
+          }
+          
+          return result;
+        },
+        
+        defineProperty(target, property, descriptor) {
+          const isNewProperty = !knownProperties.has(property);
+          const result = Reflect.defineProperty(target, property, descriptor);
+          
+          if (isNewProperty) {
+            knownProperties.add(property);
+            console.log('New property defined on ' + objectName + ': ' + String(property));
+            
+            // Notify all callbacks about the new property
+            const callbacks = propertyChangeCallbacks.get(objectName);
+            if (callbacks) {
+              callbacks.forEach(callback => callback(property, descriptor, 'defined'));
+            }
+          }
+          
+          return result;
+        },
+        
+        deleteProperty(target, property) {
+          const hadProperty = knownProperties.has(property);
+          const result = Reflect.deleteProperty(target, property);
+          
+          if (hadProperty) {
+            knownProperties.delete(property);
+            console.log('Property deleted from ' + objectName + ': ' + String(property));
+            
+            // Notify all callbacks about the deleted property
+            const callbacks = propertyChangeCallbacks.get(objectName);
+            if (callbacks) {
+              callbacks.forEach(callback => callback(property, undefined, 'deleted'));
+            }
+          }
+          
+          return result;
+        }
+      });
+    }
+    
+    // Function to register a callback for property changes
+    function onPropertyChange(objectName, callback) {
+      if (!propertyChangeCallbacks.has(objectName)) {
+        propertyChangeCallbacks.set(objectName, []);
+      }
+      propertyChangeCallbacks.get(objectName).push(callback);
+    }
+    
+    // Function to update the display for a specific object
+    function updateObjectDisplay(objectName, objectInfo) {
+      const existingDiv = document.querySelector('[data-object-name="' + objectName + '"]');
+      if (!existingDiv) return;
+      
+      const allProperties = getAllProperties(objectInfo.object);
+      const propertiesContainer = existingDiv.querySelector('.properties-container');
+      const propertyCount = existingDiv.querySelector('.property-count');
+      
+      // Update property count
+      if (propertyCount) {
+        propertyCount.textContent = '(' + allProperties.length + ' properties)';
+      }
+      
+      // Create new properties HTML
+      const propertiesHtml = allProperties.map(prop => {
+        const propInfo = getPropertyInfo(objectInfo.object, prop);
+        const typeColor = {
+          'function': '#007bff',
+          'string': '#28a745',
+          'number': '#fd7e14',
+          'boolean': '#6f42c1',
+          'object': '#20c997',
+          'undefined': '#6c757d',
+          'restricted': '#dc3545'
+        }[propInfo.type] || '#6c757d';
+        
+        return '<div style="background: #4d4d4d; border: 1px solid #666; padding: 8px; border-radius: 4px; margin: 2px; display: inline-block; min-width: 200px; vertical-align: top;">' +
+          '<div style="font-family: monospace; font-size: 12px; font-weight: bold; color: #e0e0e0; margin-bottom: 4px;">' + prop + '</div>' +
+          '<div style="font-size: 11px; color: ' + typeColor + '; margin-bottom: 2px;">' + propInfo.type + '</div>' +
+          (propInfo.value ? '<div style="font-size: 10px; color: #b0b0b0; font-style: italic;">' + propInfo.value + '</div>' : '') +
+          '<div style="font-size: 10px; color: #b0b0b0; margin-top: 2px;">' +
+            (propInfo.enumerable ? 'E' : '') +
+            (propInfo.configurable ? 'C' : '') +
+            (propInfo.writable ? 'W' : '') +
+            (propInfo.hasGetter ? 'G' : '') +
+            (propInfo.hasSetter ? 'S' : '') +
+          '</div>' +
+        '</div>';
+      }).join('');
+      
+      // Update the properties container
+      if (propertiesContainer) {
+        propertiesContainer.innerHTML = propertiesHtml;
+      }
+    }
     
     // Function to get property type and value info
     function getPropertyInfo(obj, propName) {
@@ -1156,15 +1277,39 @@ app.get('/objects', (req, res) => {
       }
     }
     
-    // Create HTML for each browser object
+    // Create HTML for each browser object with observation
     Object.entries(browserObjects).forEach(([objectName, objectInfo]) => {
       const objectDiv = document.createElement('div');
+      objectDiv.setAttribute('data-object-name', objectName);
       objectDiv.style.cssText = 
         'background: #3d3d3d; ' +
         'border: 1px solid #555; ' +
         'border-radius: 6px; ' +
         'padding: 15px; ' +
         'box-shadow: 0 2px 4px rgba(0,0,0,0.3);';
+      
+      // Create observing proxy for this object
+      const observedObj = createObservingProxy(objectInfo.object, objectName);
+      observedObjects.set(objectName, observedObj);
+      
+      // Register callback for property changes
+      onPropertyChange(objectName, (property, value, action) => {
+        console.log('Property ' + action + ': ' + property + ' on ' + objectName, value);
+        updateObjectDisplay(objectName, { ...objectInfo, object: observedObj });
+        
+        // Add visual indicator for new properties
+        if (action === 'added' || action === 'defined') {
+          const propertyElement = objectDiv.querySelector('[data-property="' + property + '"]');
+          if (propertyElement) {
+            propertyElement.style.animation = 'highlight 2s ease-in-out';
+            propertyElement.style.border = '2px solid #28a745';
+            setTimeout(() => {
+              propertyElement.style.animation = '';
+              propertyElement.style.border = '1px solid #666';
+            }, 2000);
+          }
+        }
+      });
       
       // Get all properties dynamically
       const allProperties = getAllProperties(objectInfo.object);
@@ -1182,7 +1327,7 @@ app.get('/objects', (req, res) => {
           'restricted': '#dc3545'
         }[propInfo.type] || '#6c757d';
         
-        return '<div style="background: #4d4d4d; border: 1px solid #666; padding: 8px; border-radius: 4px; margin: 2px; display: inline-block; min-width: 200px; vertical-align: top;">' +
+        return '<div data-property="' + prop + '" style="background: #4d4d4d; border: 1px solid #666; padding: 8px; border-radius: 4px; margin: 2px; display: inline-block; min-width: 200px; vertical-align: top;">' +
           '<div style="font-family: monospace; font-size: 12px; font-weight: bold; color: #e0e0e0; margin-bottom: 4px;">' + prop + '</div>' +
           '<div style="font-size: 11px; color: ' + typeColor + '; margin-bottom: 2px;">' + propInfo.type + '</div>' +
           (propInfo.value ? '<div style="font-size: 10px; color: #b0b0b0; font-style: italic;">' + propInfo.value + '</div>' : '') +
@@ -1199,23 +1344,64 @@ app.get('/objects', (req, res) => {
       objectDiv.innerHTML = 
         '<h4 style="margin: 0 0 8px 0; color: #e0e0e0; font-size: 16px;">' +
           '<span style="background: #555; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 14px; color: #e0e0e0;">' + objectName + '</span>' +
-          ' <span style="font-size: 12px; color: #b0b0b0;">(' + allProperties.length + ' properties)</span>' +
+          ' <span class="property-count" style="font-size: 12px; color: #b0b0b0;">(' + allProperties.length + ' properties)</span>' +
+          ' <span style="font-size: 10px; color: #28a745;">[LIVE OBSERVING]</span>' +
         '</h4>' +
         '<p style="margin: 0 0 10px 0; color: #b0b0b0; font-size: 14px; line-height: 1.4;">' +
           objectInfo.description +
         '</p>' +
         '<div style="margin-top: 10px;">' +
-          '<strong style="color: #e0e0e0; font-size: 13px;">All Properties & Methods:</strong>' +
-          '<div style="margin-top: 5px; max-height: 300px; overflow-y: auto; border: 1px solid #666; padding: 10px; background: #4d4d4d; border-radius: 4px;">' +
+          '<strong style="color: #e0e0e0; font-size: 13px;">All Properties & Methods (Live Updates):</strong>' +
+          '<div class="properties-container" style="margin-top: 5px; max-height: 300px; overflow-y: auto; border: 1px solid #666; padding: 10px; background: #4d4d4d; border-radius: 4px;">' +
             propertiesHtml +
           '</div>' +
           '<div style="margin-top: 5px; font-size: 11px; color: #b0b0b0;">' +
-            'Legend: E=Enumerable, C=Configurable, W=Writable, G=Getter, S=Setter' +
+            'Legend: E=Enumerable, C=Configurable, W=Writable, G=Getter, S=Setter | 🆕 New properties will be highlighted' +
           '</div>' +
         '</div>';
       
       browserObjectsContainer.appendChild(objectDiv);
     });
+    
+    // Add CSS animation for highlighting new properties
+    const style = document.createElement('style');
+    style.textContent = 
+      '@keyframes highlight {' +
+        '0% { background-color: #4d4d4d; }' +
+        '50% { background-color: #28a745; }' +
+        '100% { background-color: #4d4d4d; }' +
+      '}';
+    document.head.appendChild(style);
+    
+    // Expose observed objects map globally for storage system
+    window.observedObjects = observedObjects;
+    
+    // Expose global functions for testing property observation
+    window.addTestProperty = function(objectName, propertyName, value) {
+      const obj = observedObjects.get(objectName);
+      if (obj) {
+        obj[propertyName] = value;
+        console.log('Added test property ' + propertyName + ' to ' + objectName);
+      } else {
+        console.error('Object ' + objectName + ' not found');
+      }
+    };
+    
+    window.removeTestProperty = function(objectName, propertyName) {
+      const obj = observedObjects.get(objectName);
+      if (obj) {
+        delete obj[propertyName];
+        console.log('Removed test property ' + propertyName + ' from ' + objectName);
+      } else {
+        console.error('Object ' + objectName + ' not found');
+      }
+    };
+    
+    // Expose function to manually trigger storage
+    window.saveCurrentSession = function() {
+      storeCurrentSession();
+      console.log('Current session saved to storage');
+    };
   })();
   
   // Side Panel and Data Storage
@@ -1232,6 +1418,19 @@ app.get('/objects', (req, res) => {
     
     closePanel.addEventListener('click', () => {
       sidePanel.style.right = '-400px';
+    });
+    
+    // Save session button functionality
+    const saveSessionBtn = document.getElementById('saveSession');
+    saveSessionBtn.addEventListener('click', () => {
+      storeCurrentSession();
+      // Visual feedback
+      saveSessionBtn.style.backgroundColor = '#20c997';
+      saveSessionBtn.textContent = '✓';
+      setTimeout(() => {
+        saveSessionBtn.style.backgroundColor = '#28a745';
+        saveSessionBtn.textContent = '💾';
+      }, 1000);
     });
     
     // Storage key for sessions
@@ -1259,10 +1458,13 @@ app.get('/objects', (req, res) => {
         browserObjects: {}
       };
       
-      // Collect all browser object data
+      // Collect all browser object data from observed objects
       const browserObjects = ['window', 'document', 'navigator', 'location', 'history', 'screen'];
       browserObjects.forEach(objName => {
-        const obj = window[objName];
+        // Get the observed object from the global observedObjects map
+        const observedObj = window.observedObjects ? window.observedObjects.get(objName) : window[objName];
+        const obj = observedObj || window[objName];
+        
         if (obj) {
           currentData.browserObjects[objName] = {
             properties: getAllProperties(obj),
