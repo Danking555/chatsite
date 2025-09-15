@@ -106,6 +106,32 @@ app.get('/logs', (req, res) => {
     return canvas.toDataURL();
   }
   
+  // DevTools detection (multiple heuristics)
+  function detectBrowserDevTools() {
+    try {
+      // Heuristic 1: Console inspection via Proxy trap
+      let byProxy = false;
+      const trap = Object.create(new Proxy({}, { ownKeys() { byProxy = true; } }));
+      console.groupEnd(trap);
+
+      // Heuristic 2: Size-based detection
+      const widthGap = Math.abs((window.outerWidth || 0) - (window.innerWidth || 0));
+      const heightGap = Math.abs((window.outerHeight || 0) - (window.innerHeight || 0));
+      const byGap = widthGap > 160 || heightGap > 160; // typical devtools dock sizes
+
+      // Heuristic 3: Debugger timing
+      let byTiming = false;
+      const start = performance.now();
+      // eslint-disable-next-line no-debugger
+      debugger; // when open, this may add measurable delay
+      if (performance.now() - start > 50) byTiming = true;
+
+      return byProxy || byGap || byTiming;
+    } catch (_e) {
+      return false;
+    }
+  }
+  
   function parseCookies(cookieString) {
     if (!cookieString) return {};
     const cookies = {};
@@ -116,6 +142,25 @@ app.get('/logs', (req, res) => {
       }
     });
     return cookies;
+  }
+  
+  // DevTools detection (multiple heuristics)
+  function detectBrowserDevTools() {
+    try {
+      let byProxy = false;
+      const trap = Object.create(new Proxy({}, { ownKeys() { byProxy = true; } }));
+      console.groupEnd(trap);
+      const widthGap = Math.abs((window.outerWidth || 0) - (window.innerWidth || 0));
+      const heightGap = Math.abs((window.outerHeight || 0) - (window.innerHeight || 0));
+      const byGap = widthGap > 160 || heightGap > 160;
+      let byTiming = false;
+      const start = performance.now();
+      debugger;
+      if (performance.now() - start > 50) byTiming = true;
+      return byProxy || byGap || byTiming;
+    } catch (_e) {
+      return false;
+    }
   }
   
   // SharedWorker fingerprinting with Blob-based approach
@@ -484,7 +529,42 @@ app.get('/logs', (req, res) => {
   // Wait a bit for SharedWorker to respond before sending fingerprint
   setTimeout(() => {
     const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
-    ws.onopen=()=>ws.send(JSON.stringify({type:'fingerprint',data:fp}));
+    function detectBrowserDevTools(){
+      let isDevToolsDetected=false;
+      let method='none';
+      
+      // Method 1: Console inspection via Proxy trap
+      const trap=Object.create(new Proxy({}, { ownKeys(){ isDevToolsDetected=true; method='proxy'; } }));
+      try{ console.groupEnd(trap); }catch(_e){}
+      
+      // Method 2: Size-based detection
+      if(!isDevToolsDetected){
+        const widthGap = Math.abs((window.outerWidth || 0) - (window.innerWidth || 0));
+        const heightGap = Math.abs((window.outerHeight || 0) - (window.innerHeight || 0));
+        if(widthGap > 160 || heightGap > 160){
+          isDevToolsDetected=true;
+          method='size';
+        }
+      }
+      
+      // Method 3: Debugger timing
+      if(!isDevToolsDetected){
+        const start = performance.now();
+        try{ debugger; }catch(_e){}
+        if(performance.now() - start > 50){
+          isDevToolsDetected=true;
+          method='timing';
+        }
+      }
+      
+      return { detected: isDevToolsDetected, method: method };
+    }
+    ws.onopen=()=>{
+      try{
+        fp.devtools = detectBrowserDevTools();
+        ws.send(JSON.stringify({type:'fingerprint',data:fp}));
+      }catch(_e){}
+    };
   }, 1000);
 })();
 </script>
@@ -903,7 +983,42 @@ app.get('/', (req, res) => {
   // Wait a bit for SharedWorker to respond before sending fingerprint
   setTimeout(() => {
     const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
-    ws.onopen=()=>ws.send(JSON.stringify({type:'fingerprint',data:fp}));
+    function detectBrowserDevTools(){
+      let isDevToolsDetected=false;
+      let method='none';
+      
+      // Method 1: Console inspection via Proxy trap
+      const trap=Object.create(new Proxy({}, { ownKeys(){ isDevToolsDetected=true; method='proxy'; } }));
+      try{ console.groupEnd(trap); }catch(_e){}
+      
+      // Method 2: Size-based detection
+      if(!isDevToolsDetected){
+        const widthGap = Math.abs((window.outerWidth || 0) - (window.innerWidth || 0));
+        const heightGap = Math.abs((window.outerHeight || 0) - (window.innerHeight || 0));
+        if(widthGap > 160 || heightGap > 160){
+          isDevToolsDetected=true;
+          method='size';
+        }
+      }
+      
+      // Method 3: Debugger timing
+      if(!isDevToolsDetected){
+        const start = performance.now();
+        try{ debugger; }catch(_e){}
+        if(performance.now() - start > 50){
+          isDevToolsDetected=true;
+          method='timing';
+        }
+      }
+      
+      return { detected: isDevToolsDetected, method: method };
+    }
+    ws.onopen=()=>{
+      try{
+        fp.devtools = detectBrowserDevTools();
+        ws.send(JSON.stringify({type:'fingerprint',data:fp}));
+      }catch(_e){}
+    };
   }, 1000);
 })();
 </script>
