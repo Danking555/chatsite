@@ -1124,6 +1124,39 @@ wss.on('connection', ws => {
   });
 });
 
+// Test iframe page route
+app.get('/test-iframe', (req, res) => {
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Iframe</title>
+  <style>
+    body {
+      background-color: #1a1a1a;
+      color: #e0e0e0;
+      font-family: monospace;
+      padding: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Test Iframe Content</h2>
+  <p>This is a same-origin iframe for testing object extraction.</p>
+  <p>This iframe has its own window, document, navigator, location, history, and screen objects.</p>
+  <script>
+    // Add some test properties to demonstrate extraction
+    window.testProperty = 'testValue';
+    window.iframeCustomProp = 'customIframeValue';
+    document.testDocProperty = 'docValue';
+    document.iframeDocProp = 'iframeDocumentProperty';
+    navigator.iframeNavProp = 'iframeNavigatorProperty';
+  </script>
+</body>
+</html>`;
+  res.send(html);
+});
+
 // Browser Objects route
 app.get('/objects', (req, res) => {
   const html = `<!DOCTYPE html>
@@ -1155,6 +1188,33 @@ app.get('/objects', (req, res) => {
     
     <div id="browserObjects" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px; margin-top: 15px;">
       <!-- Browser objects will be populated by JavaScript -->
+    </div>
+  </div>
+  
+  <!-- Test Iframe Section -->
+  <div style="margin: 20px 0; padding: 20px; border: 2px solid #20c997; border-radius: 8px; max-width: 800px; background-color: #2d2d2d;">
+    <h3 style="color: #20c997; margin-top: 0;">🧪 Test Iframes</h3>
+    <p style="color: #b0b0b0; font-size: 14px; margin-bottom: 15px;">Test iframes for object extraction (same-origin and cross-origin examples):</p>
+    
+    <!-- Same-origin test iframe -->
+    <div style="margin-bottom: 15px;">
+      <h4 style="color: #e0e0e0; font-size: 14px; margin-bottom: 8px;">Same-Origin Iframe (Accessible):</h4>
+      <iframe id="test-iframe-same-origin" name="test-iframe-same-origin" src="/test-iframe" style="width: 100%; height: 200px; border: 2px solid #20c997; border-radius: 4px; background: #1a1a1a;"></iframe>
+    </div>
+    
+    <!-- Cross-origin test iframe (will show as inaccessible) -->
+    <div>
+      <h4 style="color: #e0e0e0; font-size: 14px; margin-bottom: 8px;">Cross-Origin Iframe (Inaccessible - for demonstration):</h4>
+      <iframe id="test-iframe-cross-origin" name="test-iframe-cross-origin" src="https://example.com" style="width: 100%; height: 200px; border: 2px solid #dc3545; border-radius: 4px; background: #1a1a1a;"></iframe>
+    </div>
+  </div>
+  
+  <!-- Iframe Objects Properties Section -->
+  <div style="margin: 20px 0; padding: 20px; border: 2px solid #ff6b6b; border-radius: 8px; max-width: 800px; background-color: #2d2d2d;">
+    <h3 style="color: #ff6b6b; margin-top: 0;">🖼️ Iframe Objects</h3>
+    
+    <div id="iframeObjects" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px; margin-top: 15px;">
+      <!-- Iframe objects will be populated by JavaScript -->
     </div>
   </div>
   
@@ -1517,6 +1577,182 @@ app.get('/objects', (req, res) => {
       storeCurrentSession();
       console.log('Current session saved to storage');
     };
+    
+    // Function to extract objects from iframes
+    function extractIframeObjects() {
+      const iframeObjectsContainer = document.getElementById('iframeObjects');
+      if (!iframeObjectsContainer) return;
+      
+      // Find all iframes in the document
+      const iframes = document.querySelectorAll('iframe');
+      
+      if (iframes.length === 0) {
+        iframeObjectsContainer.innerHTML = '<div style="color: #b0b0b0; padding: 20px; text-align: center;">No iframes found on this page.</div>';
+        return;
+      }
+      
+      iframeObjectsContainer.innerHTML = '<div style="color: #b0b0b0; padding: 10px; text-align: center;">Scanning ' + iframes.length + ' iframe(s)...</div>';
+      
+      // Process each iframe
+      Array.from(iframes).forEach((iframe, index) => {
+        const iframeId = 'iframe-' + index;
+        const iframeSrc = iframe.src || iframe.getAttribute('src') || 'about:blank';
+        const iframeName = iframe.name || iframeId;
+        
+        // Create container for this iframe
+        const iframeDiv = document.createElement('div');
+        iframeDiv.setAttribute('data-iframe-id', iframeId);
+        iframeDiv.style.cssText = 
+          'background: #3d3d3d; ' +
+          'border: 1px solid #ff6b6b; ' +
+          'border-radius: 6px; ' +
+          'padding: 15px; ' +
+          'box-shadow: 0 2px 4px rgba(0,0,0,0.3); ' +
+          'margin-bottom: 15px;';
+        
+        // Try to access iframe content
+        let iframeWindow = null;
+        let accessError = null;
+        
+        try {
+          // Try to access contentWindow (same-origin only)
+          iframeWindow = iframe.contentWindow;
+          if (!iframeWindow) {
+            throw new Error('Cannot access contentWindow');
+          }
+          
+          // Try to access document to verify access
+          const testDoc = iframe.contentDocument || iframe.contentWindow.document;
+          if (!testDoc) {
+            throw new Error('Cannot access contentDocument');
+          }
+        } catch (e) {
+          accessError = e.message;
+          // Cross-origin restriction
+          iframeDiv.innerHTML = 
+            '<h4 style="margin: 0 0 8px 0; color: #e0e0e0; font-size: 16px;">' +
+              '<span style="background: #555; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 14px; color: #e0e0e0;">' + iframeName + '</span>' +
+              ' <span style="font-size: 10px; color: #dc3545;">[CROSS-ORIGIN]</span>' +
+            '</h4>' +
+            '<p style="margin: 0 0 10px 0; color: #b0b0b0; font-size: 14px; line-height: 1.4;">' +
+              'Source: <code style="background: #4d4d4d; padding: 2px 6px; border-radius: 3px;">' + iframeSrc.substring(0, 100) + '</code>' +
+            '</p>' +
+            '<div style="color: #dc3545; font-size: 12px; padding: 10px; background: #4d4d4d; border-radius: 4px;">' +
+              '⚠️ Cross-origin restriction: Cannot access iframe content. Error: ' + accessError +
+            '</div>';
+          
+          iframeObjectsContainer.appendChild(iframeDiv);
+          return;
+        }
+        
+        // Successfully accessed iframe - extract objects
+        const iframeBrowserObjects = {
+          window: {
+            description: "the global object representing the iframe window",
+            object: iframeWindow
+          },
+          document: {
+            description: "entry point to the iframe DOM",
+            object: iframeWindow.document
+          },
+          navigator: {
+            description: "information about the browser from iframe context",
+            object: iframeWindow.navigator
+          },
+          location: {
+            description: "represents the iframe URL",
+            object: iframeWindow.location
+          },
+          history: {
+            description: "allows navigation through the iframe session history",
+            object: iframeWindow.history
+          },
+          screen: {
+            description: "provides details about the user's screen (shared with parent)",
+            object: iframeWindow.screen
+          }
+        };
+        
+        // Create HTML for iframe header
+        let iframeHtml = 
+          '<h4 style="margin: 0 0 8px 0; color: #e0e0e0; font-size: 16px;">' +
+            '<span style="background: #555; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 14px; color: #e0e0e0;">' + iframeName + '</span>' +
+            ' <span style="font-size: 10px; color: #28a745;">[ACCESSIBLE]</span>' +
+          '</h4>' +
+          '<p style="margin: 0 0 10px 0; color: #b0b0b0; font-size: 14px; line-height: 1.4;">' +
+            'Source: <code style="background: #4d4d4d; padding: 2px 6px; border-radius: 3px;">' + iframeSrc.substring(0, 100) + '</code>' +
+          '</p>';
+        
+        // Extract objects from iframe
+        Object.entries(iframeBrowserObjects).forEach(([objectName, objectInfo]) => {
+          try {
+            const allProperties = getAllProperties(objectInfo.object);
+            
+            const propertiesHtml = allProperties.map(prop => {
+              const propInfo = getPropertyInfo(objectInfo.object, prop);
+              const typeColor = {
+                'function': '#007bff',
+                'string': '#28a745',
+                'number': '#fd7e14',
+                'boolean': '#6f42c1',
+                'object': '#20c997',
+                'undefined': '#6c757d',
+                'restricted': '#dc3545'
+              }[propInfo.type] || '#6c757d';
+              
+              return '<div style="background: #4d4d4d; border: 1px solid #666; padding: 8px; border-radius: 4px; margin: 2px; display: inline-block; min-width: 200px; vertical-align: top;">' +
+                '<div style="font-family: monospace; font-size: 12px; font-weight: bold; color: #e0e0e0; margin-bottom: 4px;">' + prop + '</div>' +
+                '<div style="font-size: 11px; color: ' + typeColor + '; margin-bottom: 2px;">' + propInfo.type + '</div>' +
+                (propInfo.value ? '<div style="font-size: 10px; color: #b0b0b0; font-style: italic;">' + propInfo.value + '</div>' : '') +
+                '<div style="font-size: 10px; color: #b0b0b0; margin-top: 2px;">' +
+                  (propInfo.enumerable ? 'E' : '') +
+                  (propInfo.configurable ? 'C' : '') +
+                  (propInfo.writable ? 'W' : '') +
+                  (propInfo.hasGetter ? 'G' : '') +
+                  (propInfo.hasSetter ? 'S' : '') +
+                '</div>' +
+              '</div>';
+            }).join('');
+            
+            iframeHtml += 
+              '<div style="margin-top: 15px; border-top: 1px solid #555; padding-top: 10px;">' +
+                '<h5 style="margin: 0 0 8px 0; color: #e0e0e0; font-size: 14px;">' +
+                  '<span style="background: #555; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 12px;">' + objectName + '</span>' +
+                  ' <span style="font-size: 11px; color: #b0b0b0;">(' + allProperties.length + ' properties)</span>' +
+                '</h5>' +
+                '<p style="margin: 0 0 8px 0; color: #b0b0b0; font-size: 12px; line-height: 1.4;">' +
+                  objectInfo.description +
+                '</p>' +
+                '<div style="max-height: 200px; overflow-y: auto; border: 1px solid #666; padding: 10px; background: #4d4d4d; border-radius: 4px;">' +
+                  propertiesHtml +
+                '</div>' +
+              '</div>';
+          } catch (e) {
+            iframeHtml += 
+              '<div style="margin-top: 10px; color: #dc3545; font-size: 12px; padding: 8px; background: #4d4d4d; border-radius: 4px;">' +
+                'Error extracting ' + objectName + ': ' + e.message +
+              '</div>';
+          }
+        });
+        
+        iframeDiv.innerHTML = iframeHtml;
+        iframeObjectsContainer.appendChild(iframeDiv);
+      });
+    }
+    
+    // Extract iframe objects after a delay to allow iframes to load
+    setTimeout(() => {
+      extractIframeObjects();
+    }, 2000);
+    
+    // Also try to extract iframe objects periodically in case they load later
+    setInterval(() => {
+      const existingIframes = document.querySelectorAll('[data-iframe-id]').length;
+      const currentIframes = document.querySelectorAll('iframe').length;
+      if (currentIframes > existingIframes) {
+        extractIframeObjects();
+      }
+    }, 5000);
   })();
   
   // Side Panel and Data Storage
@@ -1570,7 +1806,8 @@ app.get('/objects', (req, res) => {
         timestamp: new Date().toISOString(),
         date: new Date().toLocaleDateString(),
         time: new Date().toLocaleTimeString(),
-        browserObjects: {}
+        browserObjects: {},
+        iframeObjects: {}
       };
       
       // Collect all browser object data from observed objects
@@ -1594,6 +1831,68 @@ app.get('/objects', (req, res) => {
         }
       });
       
+      // Collect iframe objects
+      const iframes = document.querySelectorAll('iframe');
+      Array.from(iframes).forEach((iframe, index) => {
+        const iframeId = 'iframe-' + index;
+        const iframeSrc = iframe.src || iframe.getAttribute('src') || 'about:blank';
+        const iframeName = iframe.name || iframeId;
+        
+        try {
+          const iframeWindow = iframe.contentWindow;
+          if (iframeWindow) {
+            const testDoc = iframe.contentDocument || iframe.contentWindow.document;
+            if (testDoc) {
+              // Successfully accessed iframe
+              const iframeData = {
+                src: iframeSrc,
+                name: iframeName,
+                accessible: true,
+                objects: {}
+              };
+              
+              browserObjects.forEach(objName => {
+                try {
+                  const obj = iframeWindow[objName];
+                  if (obj) {
+                    iframeData.objects[objName] = {
+                      properties: getAllProperties(obj)
+                    };
+                  }
+                } catch (e) {
+                  iframeData.objects[objName] = {
+                    error: e.message
+                  };
+                }
+              });
+              
+              currentData.iframeObjects[iframeId] = iframeData;
+            } else {
+              currentData.iframeObjects[iframeId] = {
+                src: iframeSrc,
+                name: iframeName,
+                accessible: false,
+                error: 'Cannot access contentDocument'
+              };
+            }
+          } else {
+            currentData.iframeObjects[iframeId] = {
+              src: iframeSrc,
+              name: iframeName,
+              accessible: false,
+              error: 'Cannot access contentWindow'
+            };
+          }
+        } catch (e) {
+          currentData.iframeObjects[iframeId] = {
+            src: iframeSrc,
+            name: iframeName,
+            accessible: false,
+            error: e.message
+          };
+        }
+      });
+      
       sessions.unshift(currentData); // Add to beginning
       
       // Keep only last 50 sessions
@@ -1609,12 +1908,13 @@ app.get('/objects', (req, res) => {
     function updateSessionsList() {
       const sessions = getStoredSessions();
       sessionsList.innerHTML = sessions.map(session => {
-        const totalProperties = Object.values(session.browserObjects).reduce((sum, obj) => sum + (obj.properties ? obj.properties.length : 0), 0);
-        const objectCounts = Object.keys(session.browserObjects).map(obj => obj + ': ' + (session.browserObjects[obj].properties ? session.browserObjects[obj].properties.length : 0)).join(', ');
+        const totalProperties = Object.values(session.browserObjects || {}).reduce((sum, obj) => sum + (obj.properties ? obj.properties.length : 0), 0);
+        const objectCounts = Object.keys(session.browserObjects || {}).map(obj => obj + ': ' + (session.browserObjects[obj].properties ? session.browserObjects[obj].properties.length : 0)).join(', ');
+        const iframeCount = Object.keys(session.iframeObjects || {}).length;
         
         return '<div style="background: #3d3d3d; border: 1px solid #555; border-radius: 6px; padding: 15px; margin-bottom: 10px; cursor: pointer;" onclick="loadSession(' + session.id + ')">' +
           '<div style="color: #e0e0e0; font-weight: bold; margin-bottom: 5px;">' + session.date + ' ' + session.time + '</div>' +
-          '<div style="font-size: 12px; color: #b0b0b0; margin-bottom: 5px;">' + totalProperties + ' total properties</div>' +
+          '<div style="font-size: 12px; color: #b0b0b0; margin-bottom: 5px;">' + totalProperties + ' total properties' + (iframeCount > 0 ? ' | ' + iframeCount + ' iframe(s)' : '') + '</div>' +
           '<div style="font-size: 11px; color: #888;">' + objectCounts + '</div>' +
         '</div>';
       }).join('');
@@ -1627,10 +1927,12 @@ app.get('/objects', (req, res) => {
       if (session) {
         // Clear current display
         const browserObjectsContainer = document.getElementById('browserObjects');
+        const iframeObjectsContainer = document.getElementById('iframeObjects');
         browserObjectsContainer.innerHTML = '';
+        if (iframeObjectsContainer) iframeObjectsContainer.innerHTML = '';
         
-        // Recreate the display with stored data
-        Object.entries(session.browserObjects).forEach(([objectName, objectData]) => {
+        // Recreate the display with stored data for main objects
+        Object.entries(session.browserObjects || {}).forEach(([objectName, objectData]) => {
           const objectDiv = document.createElement('div');
           objectDiv.style.cssText = 
             'background: #3d3d3d; ' +
@@ -1664,6 +1966,69 @@ app.get('/objects', (req, res) => {
           
           browserObjectsContainer.appendChild(objectDiv);
         });
+        
+        // Recreate the display with stored data for iframe objects
+        if (iframeObjectsContainer && session.iframeObjects) {
+          Object.entries(session.iframeObjects).forEach(([iframeId, iframeData]) => {
+            const iframeDiv = document.createElement('div');
+            iframeDiv.style.cssText = 
+              'background: #3d3d3d; ' +
+              'border: 1px solid #ff6b6b; ' +
+              'border-radius: 6px; ' +
+              'padding: 15px; ' +
+              'box-shadow: 0 2px 4px rgba(0,0,0,0.3); ' +
+              'margin-bottom: 15px;';
+            
+            if (iframeData.accessible && iframeData.objects) {
+              let iframeHtml = 
+                '<h4 style="margin: 0 0 8px 0; color: #e0e0e0; font-size: 16px;">' +
+                  '<span style="background: #555; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 14px; color: #e0e0e0;">' + iframeData.name + '</span>' +
+                  ' <span style="font-size: 10px; color: #007bff;">[STORED]</span>' +
+                '</h4>' +
+                '<p style="margin: 0 0 10px 0; color: #b0b0b0; font-size: 14px; line-height: 1.4;">' +
+                  'Source: <code style="background: #4d4d4d; padding: 2px 6px; border-radius: 3px;">' + iframeData.src.substring(0, 100) + '</code>' +
+                '</p>';
+              
+              Object.entries(iframeData.objects).forEach(([objectName, objectData]) => {
+                if (objectData.properties) {
+                  const propertiesHtml = objectData.properties.map(prop => {
+                    return '<div style="background: #4d4d4d; border: 1px solid #666; padding: 8px; border-radius: 4px; margin: 2px; display: inline-block; min-width: 200px; vertical-align: top;">' +
+                      '<div style="font-family: monospace; font-size: 12px; font-weight: bold; color: #e0e0e0; margin-bottom: 4px;">' + prop + '</div>' +
+                      '<div style="font-size: 11px; color: #007bff; margin-bottom: 2px;">stored</div>' +
+                    '</div>';
+                  }).join('');
+                  
+                  iframeHtml += 
+                    '<div style="margin-top: 15px; border-top: 1px solid #555; padding-top: 10px;">' +
+                      '<h5 style="margin: 0 0 8px 0; color: #e0e0e0; font-size: 14px;">' +
+                        '<span style="background: #555; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 12px;">' + objectName + '</span>' +
+                        ' <span style="font-size: 11px; color: #b0b0b0;">(' + objectData.properties.length + ' properties)</span>' +
+                      '</h5>' +
+                      '<div style="max-height: 200px; overflow-y: auto; border: 1px solid #666; padding: 10px; background: #4d4d4d; border-radius: 4px;">' +
+                        propertiesHtml +
+                      '</div>' +
+                    '</div>';
+                }
+              });
+              
+              iframeDiv.innerHTML = iframeHtml;
+            } else {
+              iframeDiv.innerHTML = 
+                '<h4 style="margin: 0 0 8px 0; color: #e0e0e0; font-size: 16px;">' +
+                  '<span style="background: #555; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 14px; color: #e0e0e0;">' + iframeData.name + '</span>' +
+                  ' <span style="font-size: 10px; color: #dc3545;">[STORED - NOT ACCESSIBLE]</span>' +
+                '</h4>' +
+                '<p style="margin: 0 0 10px 0; color: #b0b0b0; font-size: 14px; line-height: 1.4;">' +
+                  'Source: <code style="background: #4d4d4d; padding: 2px 6px; border-radius: 3px;">' + iframeData.src.substring(0, 100) + '</code>' +
+                '</p>' +
+                '<div style="color: #dc3545; font-size: 12px; padding: 10px; background: #4d4d4d; border-radius: 4px;">' +
+                  '⚠️ ' + (iframeData.error || 'Not accessible') +
+                '</div>';
+            }
+            
+            iframeObjectsContainer.appendChild(iframeDiv);
+          });
+        }
         
         // Close the side panel
         sidePanel.style.right = '-400px';
