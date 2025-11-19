@@ -1218,6 +1218,26 @@ app.get('/objects', (req, res) => {
     </div>
   </div>
   
+  <!-- JSON Format: Window Objects Section -->
+  <div style="margin: 20px 0; padding: 20px; border: 2px solid #9b59b6; border-radius: 8px; max-width: 1200px; background-color: #2d2d2d;">
+    <h3 style="color: #9b59b6; margin-top: 0;">📄 JSON Format: Window Objects</h3>
+    <p style="color: #b0b0b0; font-size: 14px; margin-bottom: 15px;">All window objects in JSON format:</p>
+    <div id="windowJson" style="background: #1a1a1a; border: 1px solid #555; border-radius: 4px; padding: 15px; max-height: 600px; overflow-y: auto;">
+      <pre id="windowJsonContent" style="color: #e0e0e0; font-family: 'Courier New', monospace; font-size: 12px; margin: 0; white-space: pre-wrap; word-wrap: break-word;">Loading...</pre>
+    </div>
+    <button id="copyWindowJson" style="margin-top: 10px; background-color: #9b59b6; color: white; border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer; font-size: 14px;">📋 Copy JSON</button>
+  </div>
+  
+  <!-- JSON Format: Iframe Objects Section -->
+  <div style="margin: 20px 0; padding: 20px; border: 2px solid #e67e22; border-radius: 8px; max-width: 1200px; background-color: #2d2d2d;">
+    <h3 style="color: #e67e22; margin-top: 0;">📄 JSON Format: Iframe Objects</h3>
+    <p style="color: #b0b0b0; font-size: 14px; margin-bottom: 15px;">All iframe objects in JSON format:</p>
+    <div id="iframeJson" style="background: #1a1a1a; border: 1px solid #555; border-radius: 4px; padding: 15px; max-height: 600px; overflow-y: auto;">
+      <pre id="iframeJsonContent" style="color: #e0e0e0; font-family: 'Courier New', monospace; font-size: 12px; margin: 0; white-space: pre-wrap; word-wrap: break-word;">Loading...</pre>
+    </div>
+    <button id="copyIframeJson" style="margin-top: 10px; background-color: #e67e22; color: white; border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer; font-size: 14px;">📋 Copy JSON</button>
+  </div>
+  
   <!-- Side Panel for Stored Data -->
   <div id="sidePanel" style="position: fixed; top: 0; right: -400px; width: 400px; height: 100vh; background-color: #2d2d2d; border-left: 2px solid #555; transition: right 0.3s ease; z-index: 1000; overflow-y: auto;">
     <div style="padding: 20px;">
@@ -1743,6 +1763,7 @@ app.get('/objects', (req, res) => {
     // Extract iframe objects after a delay to allow iframes to load
     setTimeout(() => {
       extractIframeObjects();
+      updateJsonSections();
     }, 2000);
     
     // Also try to extract iframe objects periodically in case they load later
@@ -1751,8 +1772,244 @@ app.get('/objects', (req, res) => {
       const currentIframes = document.querySelectorAll('iframe').length;
       if (currentIframes > existingIframes) {
         extractIframeObjects();
+        updateJsonSections();
       }
     }, 5000);
+    
+    // Function to safely get property value for JSON serialization
+    function getPropertyValueForJson(obj, propName) {
+      try {
+        const value = obj[propName];
+        const type = typeof value;
+        
+        // Handle different types
+        if (type === 'function') {
+          return {
+            type: 'function',
+            name: value.name || 'anonymous',
+            length: value.length,
+            toString: value.toString().substring(0, 200)
+          };
+        } else if (type === 'object' && value !== null) {
+          if (value instanceof Date) {
+            return { type: 'Date', value: value.toISOString() };
+          } else if (value instanceof RegExp) {
+            return { type: 'RegExp', value: value.toString() };
+          } else if (Array.isArray(value)) {
+            return { type: 'Array', length: value.length, preview: value.slice(0, 5) };
+          } else if (value.nodeType !== undefined) {
+            return { type: 'DOMNode', nodeName: value.nodeName, nodeType: value.nodeType };
+          } else {
+            // Try to get a preview of object properties
+            try {
+              const keys = Object.keys(value).slice(0, 10);
+              return { type: 'object', keys: keys, keysCount: Object.keys(value).length };
+            } catch (e) {
+              return { type: 'object', error: 'Cannot enumerate properties' };
+            }
+          }
+        } else {
+          return value;
+        }
+      } catch (e) {
+        return { error: e.message };
+      }
+    }
+    
+    // Function to collect window objects for JSON
+    function collectWindowObjectsForJson() {
+      const browserObjects = ['window', 'document', 'navigator', 'location', 'history', 'screen'];
+      const result = {};
+      
+      browserObjects.forEach(objName => {
+        try {
+          const obj = window[objName];
+          if (obj) {
+            const properties = getAllProperties(obj);
+            const objData = {
+              properties: {},
+              propertyCount: properties.length
+            };
+            
+            // Sample some properties (first 50 to avoid huge JSON)
+            properties.slice(0, 50).forEach(prop => {
+              try {
+                objData.properties[prop] = getPropertyValueForJson(obj, prop);
+              } catch (e) {
+                objData.properties[prop] = { error: e.message };
+              }
+            });
+            
+            if (properties.length > 50) {
+              objData.properties['...'] = '... and ' + (properties.length - 50) + ' more properties';
+            }
+            
+            result[objName] = objData;
+          }
+        } catch (e) {
+          result[objName] = { error: e.message };
+        }
+      });
+      
+      return result;
+    }
+    
+    // Function to collect iframe objects for JSON
+    function collectIframeObjectsForJson() {
+      const iframes = document.querySelectorAll('iframe');
+      const result = {};
+      
+      Array.from(iframes).forEach((iframe, index) => {
+        const iframeId = 'iframe-' + index;
+        const iframeSrc = iframe.src || iframe.getAttribute('src') || 'about:blank';
+        const iframeName = iframe.name || iframeId;
+        
+        try {
+          const iframeWindow = iframe.contentWindow;
+          if (iframeWindow) {
+            const testDoc = iframe.contentDocument || iframeWindow.document;
+            if (testDoc) {
+              // Successfully accessed iframe
+              const iframeData = {
+                src: iframeSrc,
+                name: iframeName,
+                accessible: true,
+                objects: {}
+              };
+              
+              const browserObjects = ['window', 'document', 'navigator', 'location', 'history', 'screen'];
+              browserObjects.forEach(objName => {
+                try {
+                  const obj = iframeWindow[objName];
+                  if (obj) {
+                    const properties = getAllProperties(obj);
+                    const objData = {
+                      properties: {},
+                      propertyCount: properties.length
+                    };
+                    
+                    // Sample some properties (first 50 to avoid huge JSON)
+                    properties.slice(0, 50).forEach(prop => {
+                      try {
+                        objData.properties[prop] = getPropertyValueForJson(obj, prop);
+                      } catch (e) {
+                        objData.properties[prop] = { error: e.message };
+                      }
+                    });
+                    
+                    if (properties.length > 50) {
+                      objData.properties['...'] = '... and ' + (properties.length - 50) + ' more properties';
+                    }
+                    
+                    iframeData.objects[objName] = objData;
+                  }
+                } catch (e) {
+                  iframeData.objects[objName] = { error: e.message };
+                }
+              });
+              
+              result[iframeId] = iframeData;
+            } else {
+              result[iframeId] = {
+                src: iframeSrc,
+                name: iframeName,
+                accessible: false,
+                error: 'Cannot access contentDocument'
+              };
+            }
+          } else {
+            result[iframeId] = {
+              src: iframeSrc,
+              name: iframeName,
+              accessible: false,
+              error: 'Cannot access contentWindow'
+            };
+          }
+        } catch (e) {
+          result[iframeId] = {
+            src: iframeSrc,
+            name: iframeName,
+            accessible: false,
+            error: e.message
+          };
+        }
+      });
+      
+      return result;
+    }
+    
+    // Function to update JSON sections
+    function updateJsonSections() {
+      // Update window JSON
+      try {
+        const windowData = collectWindowObjectsForJson();
+        const windowJsonContent = document.getElementById('windowJsonContent');
+        if (windowJsonContent) {
+          windowJsonContent.textContent = JSON.stringify(windowData, null, 2);
+        }
+      } catch (e) {
+        const windowJsonContent = document.getElementById('windowJsonContent');
+        if (windowJsonContent) {
+          windowJsonContent.textContent = 'Error generating window JSON: ' + e.message;
+        }
+      }
+      
+      // Update iframe JSON
+      try {
+        const iframeData = collectIframeObjectsForJson();
+        const iframeJsonContent = document.getElementById('iframeJsonContent');
+        if (iframeJsonContent) {
+          iframeJsonContent.textContent = JSON.stringify(iframeData, null, 2);
+        }
+      } catch (e) {
+        const iframeJsonContent = document.getElementById('iframeJsonContent');
+        if (iframeJsonContent) {
+          iframeJsonContent.textContent = 'Error generating iframe JSON: ' + e.message;
+        }
+      }
+    }
+    
+    // Copy to clipboard functions
+    document.getElementById('copyWindowJson')?.addEventListener('click', () => {
+      const content = document.getElementById('windowJsonContent')?.textContent;
+      if (content) {
+        navigator.clipboard.writeText(content).then(() => {
+          const btn = document.getElementById('copyWindowJson');
+          const originalText = btn.textContent;
+          btn.textContent = '✓ Copied!';
+          btn.style.backgroundColor = '#28a745';
+          setTimeout(() => {
+            btn.textContent = originalText;
+            btn.style.backgroundColor = '#9b59b6';
+          }, 2000);
+        }).catch(err => {
+          alert('Failed to copy: ' + err.message);
+        });
+      }
+    });
+    
+    document.getElementById('copyIframeJson')?.addEventListener('click', () => {
+      const content = document.getElementById('iframeJsonContent')?.textContent;
+      if (content) {
+        navigator.clipboard.writeText(content).then(() => {
+          const btn = document.getElementById('copyIframeJson');
+          const originalText = btn.textContent;
+          btn.textContent = '✓ Copied!';
+          btn.style.backgroundColor = '#28a745';
+          setTimeout(() => {
+            btn.textContent = originalText;
+            btn.style.backgroundColor = '#e67e22';
+          }, 2000);
+        }).catch(err => {
+          alert('Failed to copy: ' + err.message);
+        });
+      }
+    });
+    
+    // Initial JSON update
+    setTimeout(() => {
+      updateJsonSections();
+    }, 3000);
   })();
   
   // Side Panel and Data Storage
