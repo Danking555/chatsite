@@ -1238,6 +1238,25 @@ app.get('/objects', (req, res) => {
     <button id="copyIframeJson" style="margin-top: 10px; background-color: #e67e22; color: white; border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer; font-size: 14px;">📋 Copy JSON</button>
   </div>
   
+  <!-- DOM Mutations Section -->
+  <div style="margin: 20px 0; padding: 20px; border: 2px solid #e74c3c; border-radius: 8px; max-width: 1200px; background-color: #2d2d2d;">
+    <h3 style="color: #e74c3c; margin-top: 0;">🔍 DOM Mutations Observer</h3>
+    <p style="color: #b0b0b0; font-size: 14px; margin-bottom: 15px;">Tracking dynamically injected DOM elements:</p>
+    
+    <div style="margin-bottom: 15px;">
+      <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+        <button id="clearMutations" style="background-color: #e74c3c; color: white; border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer; font-size: 14px;">🗑️ Clear</button>
+        <button id="pauseMutations" style="background-color: #f39c12; color: white; border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer; font-size: 14px;">⏸️ Pause</button>
+        <button id="copyMutations" style="background-color: #3498db; color: white; border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer; font-size: 14px;">📋 Copy</button>
+        <span id="mutationCount" style="color: #e0e0e0; padding: 8px 16px; background: #3d3d3d; border-radius: 4px; font-size: 14px;">0 mutations</span>
+      </div>
+      
+      <div id="mutationsList" style="background: #1a1a1a; border: 1px solid #555; border-radius: 4px; padding: 15px; max-height: 600px; overflow-y: auto;">
+        <div style="color: #b0b0b0; font-size: 12px;">Waiting for DOM mutations...</div>
+      </div>
+    </div>
+  </div>
+  
   <!-- Side Panel for Stored Data -->
   <div id="sidePanel" style="position: fixed; top: 0; right: -400px; width: 400px; height: 100vh; background-color: #2d2d2d; border-left: 2px solid #555; transition: right 0.3s ease; z-index: 1000; overflow-y: auto;">
     <div style="padding: 20px;">
@@ -1258,6 +1277,242 @@ app.get('/objects', (req, res) => {
   <button id="saveSession" style="position: fixed; top: 80px; right: 20px; background-color: #28a745; color: white; border: none; border-radius: 50%; width: 50px; height: 50px; cursor: pointer; z-index: 1001; font-size: 18px;" title="Save Current Session">💾</button>
 
   <script>
+  // DOM Mutations Observer
+  (function() {
+    const mutationsList = document.getElementById('mutationsList');
+    const mutationCount = document.getElementById('mutationCount');
+    const clearBtn = document.getElementById('clearMutations');
+    const pauseBtn = document.getElementById('pauseMutations');
+    const copyBtn = document.getElementById('copyMutations');
+    
+    let mutations = [];
+    let mutationCounter = 0;
+    let isPaused = false;
+    let observer = null;
+    
+    // Function to format element info
+    function getElementInfo(element) {
+      if (!element || !element.tagName) return 'Unknown';
+      
+      let info = element.tagName.toLowerCase();
+      if (element.id) info += '#' + element.id;
+      if (element.className && typeof element.className === 'string') {
+        const classes = element.className.trim().split(/\s+/).slice(0, 3);
+        if (classes.length > 0 && classes[0]) {
+          info += '.' + classes.join('.');
+        }
+      }
+      return info;
+    }
+    
+    // Function to get element attributes
+    function getElementAttributes(element) {
+      if (!element || !element.attributes) return {};
+      const attrs = {};
+      for (let attr of element.attributes) {
+        if (attr.name !== 'style') { // Skip style for brevity
+          attrs[attr.name] = attr.value.substring(0, 50);
+        }
+      }
+      return attrs;
+    }
+    
+    // Function to add mutation to display
+    function addMutationToDisplay(mutation) {
+      mutationCounter++;
+      const timestamp = new Date().toLocaleTimeString();
+
+      // Temporarily disconnect observer to avoid observing our own UI updates
+      observer.disconnect();
+
+      const mutationDiv = document.createElement('div');
+      mutationDiv.style.cssText =
+        'background: #2d2d2d; ' +
+        'border-left: 3px solid #e74c3c; ' +
+        'padding: 10px; ' +
+        'margin-bottom: 10px; ' +
+        'border-radius: 4px; ' +
+        'font-family: monospace; ' +
+        'font-size: 11px;';
+
+      let mutationHtml = '<div style="color: #e74c3c; font-weight: bold; margin-bottom: 5px;">';
+      mutationHtml += '#' + mutationCounter + ' - ' + mutation.type + ' @ ' + timestamp;
+      mutationHtml += '</div>';
+
+      if (mutation.type === 'childList') {
+        if (mutation.addedNodes.length > 0) {
+          mutationHtml += '<div style="color: #28a745; margin: 5px 0;">+ Added Nodes (' + mutation.addedNodes.length + '):</div>';
+          Array.from(mutation.addedNodes).forEach((node, idx) => {
+            if (node.nodeType === 1) { // Element node
+              const elemInfo = getElementInfo(node);
+              const attrs = getElementAttributes(node);
+              mutationHtml += '<div style="color: #e0e0e0; margin-left: 15px; margin-bottom: 5px;">';
+              mutationHtml += '<span style="color: #3498db;">' + elemInfo + '</span>';
+
+              if (Object.keys(attrs).length > 0) {
+                mutationHtml += '<div style="color: #95a5a6; font-size: 10px; margin-left: 10px;">';
+                mutationHtml += JSON.stringify(attrs, null, 2);
+                mutationHtml += '</div>';
+              }
+
+              // Show text content preview if any
+              if (node.textContent && node.textContent.trim()) {
+                const preview = node.textContent.trim().substring(0, 100);
+                mutationHtml += '<div style="color: #95a5a6; font-size: 10px; margin-left: 10px; font-style: italic;">';
+                mutationHtml += 'Text: "' + preview + (node.textContent.length > 100 ? '...' : '') + '"';
+                mutationHtml += '</div>';
+              }
+              mutationHtml += '</div>';
+            } else if (node.nodeType === 3) { // Text node
+              const text = node.textContent.trim();
+              if (text) {
+                mutationHtml += '<div style="color: #95a5a6; margin-left: 15px;">Text: "' + text.substring(0, 50) + '"</div>';
+              }
+            }
+          });
+        }
+
+        if (mutation.removedNodes.length > 0) {
+          mutationHtml += '<div style="color: #e74c3c; margin: 5px 0;">- Removed Nodes (' + mutation.removedNodes.length + '):</div>';
+          Array.from(mutation.removedNodes).forEach((node, idx) => {
+            if (node.nodeType === 1) {
+              const elemInfo = getElementInfo(node);
+              mutationHtml += '<div style="color: #e0e0e0; margin-left: 15px;">' + elemInfo + '</div>';
+            }
+          });
+        }
+
+        mutationHtml += '<div style="color: #95a5a6; margin-top: 5px; font-size: 10px;">';
+        mutationHtml += 'Target: ' + getElementInfo(mutation.target);
+        mutationHtml += '</div>';
+      } else if (mutation.type === 'attributes') {
+        mutationHtml += '<div style="color: #f39c12; margin: 5px 0;">Attribute: ' + mutation.attributeName + '</div>';
+        mutationHtml += '<div style="color: #95a5a6;">Target: ' + getElementInfo(mutation.target) + '</div>';
+        if (mutation.target.getAttribute) {
+          const newValue = mutation.target.getAttribute(mutation.attributeName);
+          mutationHtml += '<div style="color: #e0e0e0; margin-left: 15px;">Value: ' + (newValue || 'null') + '</div>';
+        }
+      } else if (mutation.type === 'characterData') {
+        mutationHtml += '<div style="color: #9b59b6; margin: 5px 0;">Character Data Changed</div>';
+        mutationHtml += '<div style="color: #e0e0e0;">New: "' + mutation.target.textContent.substring(0, 100) + '"</div>';
+      }
+
+      mutationDiv.innerHTML = mutationHtml;
+
+      // Insert at the top
+      if (mutationsList.firstChild && mutationsList.firstChild.textContent !== 'Waiting for DOM mutations...') {
+        mutationsList.insertBefore(mutationDiv, mutationsList.firstChild);
+      } else {
+        mutationsList.innerHTML = '';
+        mutationsList.appendChild(mutationDiv);
+      }
+
+      // Limit to last 100 mutations displayed
+      while (mutationsList.children.length > 100) {
+        mutationsList.removeChild(mutationsList.lastChild);
+      }
+
+      // Update counter
+      mutationCount.textContent = mutationCounter + ' mutations';
+
+      // Store for export
+      mutations.push({
+        counter: mutationCounter,
+        timestamp: timestamp,
+        type: mutation.type,
+        target: getElementInfo(mutation.target),
+        addedNodes: Array.from(mutation.addedNodes).map(n => getElementInfo(n)),
+        removedNodes: Array.from(mutation.removedNodes).map(n => getElementInfo(n)),
+        attributeName: mutation.attributeName
+      });
+
+      // Reconnect observer after updating UI
+      observer.observe(document.body, {
+        childList: true,
+        attributes: true,
+        characterData: true,
+        subtree: true,
+        attributeOldValue: true,
+        characterDataOldValue: true
+      });
+    }
+    
+    // Create MutationObserver
+    observer = new MutationObserver((mutationsList, observer) => {
+      if (isPaused) return;
+      
+      for (let mutation of mutationsList) {
+        // Filter out mutations in our own sections to avoid recursion
+        const target = mutation.target;
+        if (target.id === 'mutationsList' || 
+            target.closest('#mutationsList') ||
+            target.id === 'browserObjects' ||
+            target.closest('#browserObjects')) {
+          continue;
+        }
+        
+        addMutationToDisplay(mutation);
+        console.log('DOM Mutation detected:', mutation);
+      }
+    });
+    
+    // Start observing
+    observer.observe(document.body, {
+      childList: true,
+      attributes: true,
+      characterData: true,
+      subtree: true,
+      attributeOldValue: true,
+      characterDataOldValue: true
+    });
+    
+    console.log('MutationObserver started');
+    
+    // Button handlers
+    clearBtn.addEventListener('click', () => {
+      // Temporarily stop observing while clearing
+      observer.disconnect();
+      mutationsList.innerHTML = '<div style="color: #b0b0b0; font-size: 12px;">Waiting for DOM mutations...</div>';
+      mutations = [];
+      mutationCounter = 0;
+      mutationCount.textContent = '0 mutations';
+
+      // Resume observing
+      observer.observe(document.body, {
+        childList: true,
+        attributes: true,
+        characterData: true,
+        subtree: true,
+        attributeOldValue: true,
+        characterDataOldValue: true
+      });
+    });
+    
+    pauseBtn.addEventListener('click', () => {
+      isPaused = !isPaused;
+      pauseBtn.textContent = isPaused ? '▶️ Resume' : '⏸️ Pause';
+      pauseBtn.style.backgroundColor = isPaused ? '#28a745' : '#f39c12';
+    });
+    
+    copyBtn.addEventListener('click', () => {
+      const exportData = JSON.stringify(mutations, null, 2);
+      navigator.clipboard.writeText(exportData).then(() => {
+        copyBtn.textContent = '✓ Copied!';
+        copyBtn.style.backgroundColor = '#28a745';
+        setTimeout(() => {
+          copyBtn.textContent = '📋 Copy';
+          copyBtn.style.backgroundColor = '#3498db';
+        }, 2000);
+      }).catch(err => {
+        alert('Failed to copy: ' + err.message);
+      });
+    });
+    
+    // Expose globally for debugging
+    window.mutationObserver = observer;
+    window.getMutations = () => mutations;
+  })();
+  
   // Function to get all properties of an object (global scope)
   function getAllProperties(obj) {
     const properties = new Set();
