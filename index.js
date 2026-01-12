@@ -1278,6 +1278,17 @@ app.get('/dom', (req, res) => {
       return observer;
     }
 
+    async function detectChromeExtensionExistencel_isClaudeEnabled() {
+      try {
+        await fetch("chrome-extension://fcoeoabgfenejglbffodgkkbkcdhcgfn/assets/agent-visual-indicator.js-Ct7LqXhp.js", {
+          method: 'HEAD'
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
     window.onload = function () {
       detectDomInjection();
     };
