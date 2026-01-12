@@ -1204,6 +1204,13 @@ app.get('/dom', (req, res) => {
 <body>
   <h1>🧬 DOM Injection Monitor</h1>
   <p>This page observes DOM mutations and logs newly added elements to the console (and below).</p>
+  
+  <!-- Chrome Extension Detection Result -->
+  <div id="extensionResult" style="max-width: 960px; margin: 20px auto; padding: 20px; background-color: #2d2d2d; border-radius: 8px; border: 1px solid #555; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">
+    <h2 style="color: #ffffff; margin-top: 0;">🔍 Chrome Extension Detection</h2>
+    <div id="extensionStatus" style="color: #b0b0b0; font-size: 16px;">Checking...</div>
+  </div>
+  
   <div id="domLog" class="log"></div>
   <script>
     function formatNodeDetails(node) {
@@ -1289,8 +1296,21 @@ app.get('/dom', (req, res) => {
       }
     }
 
-    window.onload = function () {
+    window.onload = async function () {
       detectDomInjection();
+      
+      // Automatically check for Chrome extension and display result
+      const result = await detectChromeExtensionExistencel_isClaudeEnabled();
+      const statusEl = document.getElementById('extensionStatus');
+      if (statusEl) {
+        if (result) {
+          statusEl.textContent = '✅ Extension DETECTED: Claude extension is enabled';
+          statusEl.style.color = '#28a745';
+        } else {
+          statusEl.textContent = '❌ Extension NOT DETECTED: Claude extension is not enabled';
+          statusEl.style.color = '#dc3545';
+        }
+      }
     };
   </script>
 </body>
