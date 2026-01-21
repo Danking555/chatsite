@@ -2471,5 +2471,66 @@ app.get('/objects', (req, res) => {
   res.send(html);
 });
 
+// Test route: Object.prototype defineProperty hook detection
+app.get('/testest', (req, res) => {
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>testest - Object.prototype hook detection</title>
+  <style>
+    body { background:#1a1a1a; color:#e0e0e0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; padding: 24px; }
+    h1 { font-size: 18px; margin: 0 0 12px; }
+    pre { background:#2d2d2d; border:1px solid #555; border-radius: 8px; padding: 16px; overflow:auto; }
+    .hint { color:#b0b0b0; font-size: 12px; margin: 0 0 16px; }
+  </style>
+</head>
+<body>
+  <h1>/testest</h1>
+  <div class="hint">Defines <code>Object.prototype.r</code> setter, then scans <code>Object.prototype</code> for non-standard keys and prints <code>out</code>.</div>
+  <pre id="out">Running…</pre>
+
+  <script>
+    (function () {
+      // Run threat-actor style hook just before detection.
+      Object.defineProperty(Object.prototype, 'r', {
+        set(val) { value: val }
+      });
+
+      // Detection logic (from detect_objproto_defineproperty_hooks.js)
+      const out = { status: 'clean', pollution: [] };
+
+      const BASE_OBJPROTO_WHITELIST = new Set([
+        'constructor',
+        '__defineGetter__',
+        '__defineSetter__',
+        'hasOwnProperty',
+        '__lookupGetter__',
+        '__lookupSetter__',
+        'isPrototypeOf',
+        'propertyIsEnumerable',
+        'toString',
+        'valueOf',
+        '__proto__',
+        'toLocaleString',
+      ]);
+
+      for (const key of Object.getOwnPropertyNames(Object.prototype)) {
+        if (!BASE_OBJPROTO_WHITELIST.has(key)) {
+          out.pollution.push({ type: 'NON_STANDARD_KEY', key });
+        }
+      }
+
+      if (out.pollution.length) out.status = 'detected';
+
+      const el = document.getElementById('out');
+      if (el) el.textContent = JSON.stringify(out, null, 2);
+    })();
+  </script>
+</body>
+</html>`;
+  res.send(html);
+});
+
 // Start server
 server.listen(port, () => console.log(`Server running on http://localhost:${port}`));
